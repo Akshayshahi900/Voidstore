@@ -8,6 +8,7 @@
 #include <sstream>
 #include <fstream>
 #include <chrono>
+#include <sys/epoll.h>
 
 std::unordered_map<std::string, std::string> store;
 std::ofstream aof("db.aof", std::ios::app);
@@ -57,11 +58,6 @@ int main()
     perror("Socket creation failed");
     return 1;
   }
-  fd_set master;
-  fd_set read_fds;
-
-  FD_ZERO(&master);
-  FD_ZERO(&read_fds);
 
   // 2. Allow address reuse
   int opt = 1;
@@ -91,144 +87,139 @@ int main()
     return 1;
   }
 
-  FD_SET(serverSocket, &master);
-  int fdmax = serverSocket;
-
   std::cout << "Server listening on port 8080...\n";
+
+  int epoll_fd = epoll_create1(0);
+  epoll_event ev;
+  ev.events = EPOLLIN;
+  ev.data.fd = serverSocket;
+
+  epoll_ctl(epoll_fd, EPOLL_CTL_ADD, serverSocket, &ev);
 
   sockaddr_in clientAddress{};
   socklen_t clientSize = sizeof(clientAddress);
-
+  epoll_event events[64];
   // 6. Main server loop
   while (true)
   {
-    read_fds = master;
+    int n = epoll_wait(epoll_fd, events, 64, -1);
 
-    if (select(fdmax + 1, &read_fds, NULL, NULL, NULL) == -1)
+    for (int i = 0; i < n; i++)
     {
-      perror("select");
-      exit(1);
-    }
-
-    for (int i = 0; i <= fdmax; i++)
-    {
-      if (FD_ISSET(i, &read_fds))
+      int fd = events[i].data.fd;
+      if (fd == serverSocket)
       {
-        if (i == serverSocket)
+        int newfd = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientSize);
+        if (newfd == -1)
         {
-          sockaddr_in clientAddress{};
-          socklen_t clientSize = sizeof(clientAddress);
+          perror("accept");
+          continue;
+        }
 
-          int newfd = accept(serverSocket,
-                             (struct sockaddr *)&clientAddress,
-                             &clientSize);
+        epoll_event client_ev;
+        client_ev.events = EPOLLIN;
+        client_ev.data.fd = newfd;
 
-          if (newfd == -1)
-          {
-            perror("accept");
-          }
-          else
-          {
-            FD_SET(newfd, &master);
+        epoll_ctl(epoll_fd, EPOLL_CTL_ADD, newfd, &client_ev);
 
-            if (newfd > fdmax)
-              fdmax = newfd;
+        std::cout << "New client connected: " << newfd << std::endl;
+      }
+      else
+      {
+        char buffer[1024];
 
-            std::cout << "New Client Connected: " << newfd << std::endl;
-          }
+        int bytes = recv(fd, buffer, sizeof(buffer) - 1, 0);
+
+        if (bytes <= 0)
+        {
+          std::cout << "Client disconnected: " << fd << std::endl;
+
+          close(fd);
+          epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
         }
         else
         {
-          char buffer[1024];
+          buffer[bytes] = '\0';
 
-          int bytes = recv(i, buffer, sizeof(buffer) - 1, 0);
+          std::cout << "Received from " << fd << ": " << buffer << std::endl;
 
-          if (bytes <= 0)
+          std::string input(buffer);
+          std::istringstream iss(input);
+          std::string command;
+
+          iss >> command;
+
+          std::string response;
+
+          if (command == "SET")
           {
-            std::cout << "Client disconnected: " << i << std::endl;
+            std::string key, value;
+            int ttl = -1;
 
-            close(i);
-            FD_CLR(i, &master);
+            iss >> key >> value;
+
+            if (iss >> ttl)
+            {
+              expiry[key] = time(NULL) + ttl;
+            }
+
+            store[key] = value;
+
+            // AOF logging
+            aof << "SET " << key << " " << value;
+            if (ttl > 0)
+              aof << " " << ttl;
+            aof << std::endl;
+            aof.flush();
+
+            response = "OK\n";
           }
-          else
+          else if (command == "GET")
           {
-            buffer[bytes] = '\0';
+            std::string key;
+            iss >> key;
 
-            std::cout << "Received from " << i << ": " << buffer << std::endl;
-
-            std::string input(buffer);
-            std::istringstream iss(input);
-            std::string command;
-            iss >> command;
-
-            std::string response;
-            if (command == "SET")
+            if (expiry.find(key) != expiry.end())
             {
-              std::string key, value;
-              int ttl = -1;
-
-              iss >> key >> value;
-
-              if (iss >> ttl)
+              if (time(NULL) > expiry[key])
               {
-                expiry[key] = time(NULL) + ttl;
-              }
+                store.erase(key);
+                expiry.erase(key);
 
-              store[key] = value;
-
-              aof << "SET " << key << " " << value << std::endl;
-              if (ttl > 0)
-                aof << " " << ttl;
-              aof << std::endl;
-              aof.flush();
-
-              response = "OK\n";
-            }
-            else if (command == "GET")
-            {
-              std::string key;
-              iss >> key;
-
-              if (expiry.find(key) != expiry.end())
-              {
-                if (time(NULL) > expiry[key])
-                {
-                  store.erase(key);
-                  expiry.erase(key);
-                  response = "NOT FOUND\n";
-                  send(i, response.c_str(), response.length(), 0);
-                  continue;
-                }
-              }
-
-              if (store.find(key) != store.end())
-              {
-                response = store[key] + "\n";
-              }
-              else
-              {
                 response = "NOT FOUND\n";
+                send(fd, response.c_str(), response.length(), 0);
+                continue;
               }
             }
-            else if (command == "DEL")
+
+            if (store.find(key) != store.end())
             {
-              std::string key;
-              iss >> key;
-
-              store.erase(key);
-              expiry.erase(key);
-
-              aof << "DEL " << key << std::endl;
-              aof.flush();
-
-              response = "DELETED\n";
+              response = store[key] + "\n";
             }
             else
             {
-              response = "UNKNOWN COMMAND\n";
+              response = "NOT FOUND\n";
             }
-            send(i, response.c_str(), response.length(), 0);
           }
+          else if (command == "DEL")
+          {
+            std::string key;
+            iss >> key;
+
+            store.erase(key);
+            expiry.erase(key);
+
+            aof << "DEL " << key << std::endl;
+            aof.flush();
+
+            response = "DELETED\n";
+          }
+          else
+          {
+            response = "UNKNOWN COMMAND\n";
+          }
+
+          send(fd, response.c_str(), response.length(), 0);
         }
       }
     }
