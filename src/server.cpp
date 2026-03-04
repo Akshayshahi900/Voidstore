@@ -7,10 +7,11 @@
 #include <string>
 #include <sstream>
 #include <fstream>
+#include <chrono>
 
 std::unordered_map<std::string, std::string> store;
 std::ofstream aof("db.aof", std::ios::app);
-
+std::unordered_map<std::string, std::time_t> expiry;
 void loadDatabase()
 {
   std::ifstream file("db.aof");
@@ -25,8 +26,16 @@ void loadDatabase()
     if (command == "SET")
     {
       std::string key, value;
+      int ttl;
+
       iss >> key >> value;
+
       store[key] = value;
+
+      if (iss >> ttl)
+      {
+        expiry[key] = time(NULL) + ttl;
+      }
     }
     else if (command == "DEL")
     {
@@ -156,17 +165,41 @@ int main()
             if (command == "SET")
             {
               std::string key, value;
+              int ttl = -1;
+
               iss >> key >> value;
 
+              if (iss >> ttl)
+              {
+                expiry[key] = time(NULL) + ttl;
+              }
+
               store[key] = value;
+
               aof << "SET " << key << " " << value << std::endl;
+              if (ttl > 0)
+                aof << " " << ttl;
+              aof << std::endl;
               aof.flush();
+
               response = "OK\n";
             }
             else if (command == "GET")
             {
               std::string key;
               iss >> key;
+
+              if (expiry.find(key) != expiry.end())
+              {
+                if (time(NULL) > expiry[key])
+                {
+                  store.erase(key);
+                  expiry.erase(key);
+                  response = "NOT FOUND\n";
+                  send(i, response.c_str(), response.length(), 0);
+                  continue;
+                }
+              }
 
               if (store.find(key) != store.end())
               {
@@ -183,8 +216,11 @@ int main()
               iss >> key;
 
               store.erase(key);
+              expiry.erase(key);
+
               aof << "DEL " << key << std::endl;
               aof.flush();
+
               response = "DELETED\n";
             }
             else
