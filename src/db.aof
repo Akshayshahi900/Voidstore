@@ -6,3 +6,5 @@ SET name akshay
  10
 SET city NEWYORK
 SET CITY NEWJERSEY 7
+SET name AKSHAY
+DEL name

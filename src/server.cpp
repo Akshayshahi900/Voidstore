@@ -9,10 +9,36 @@
 #include <fstream>
 #include <chrono>
 #include <sys/epoll.h>
+#include <vector>
 
 std::unordered_map<std::string, std::string> store;
 std::ofstream aof("db.aof", std::ios::app);
 std::unordered_map<std::string, std::time_t> expiry;
+
+std::vector<std::string> parseRESP(const std::string &input)
+{
+  std::vector<std::string> args;
+  std::istringstream stream(input);
+  std::string line;
+
+  std::getline(stream, line);
+  if (!line.empty() && line.back() == '\r')
+    line.pop_back();
+  if (line.empty() || line[0] != '*')
+    return args;
+  int argCount = std::stoi(line.substr(1));
+
+  for (int i = 0; i < argCount; i++)
+  {
+    std::getline(stream, line); //$length line
+    std::getline(stream, line); // actual argument
+
+    if (!line.empty() && line.back() == '\r')
+      line.pop_back();
+    args.push_back(line);
+  }
+  return args;
+}
 void loadDatabase()
 {
   std::ifstream file("db.aof");
@@ -144,79 +170,100 @@ int main()
           std::cout << "Received from " << fd << ": " << buffer << std::endl;
 
           std::string input(buffer);
-          std::istringstream iss(input);
-          std::string command;
+          std::vector<std::string> args = parseRESP(input);
 
-          iss >> command;
+          if (args.empty())
+          {
+            std::string response = "-ERR invalid RESP format\r\n";
+            send(fd, response.c_str(), response.length(), 0);
+            continue;
+          }
 
+          std::string command = args[0];
           std::string response;
 
           if (command == "SET")
           {
-            std::string key, value;
-            int ttl = -1;
-
-            iss >> key >> value;
-
-            if (iss >> ttl)
+            if (args.size() < 3)
             {
-              expiry[key] = time(NULL) + ttl;
-            }
-
-            store[key] = value;
-
-            // AOF logging
-            aof << "SET " << key << " " << value;
-            if (ttl > 0)
-              aof << " " << ttl;
-            aof << std::endl;
-            aof.flush();
-
-            response = "OK\n";
-          }
-          else if (command == "GET")
-          {
-            std::string key;
-            iss >> key;
-
-            if (expiry.find(key) != expiry.end())
-            {
-              if (time(NULL) > expiry[key])
-              {
-                store.erase(key);
-                expiry.erase(key);
-
-                response = "NOT FOUND\n";
-                send(fd, response.c_str(), response.length(), 0);
-                continue;
-              }
-            }
-
-            if (store.find(key) != store.end())
-            {
-              response = store[key] + "\n";
+              response = "-ERR wrong number of arguments\r\n";
             }
             else
             {
-              response = "NOT FOUND\n";
+              std::string key = args[1];
+              std::string value = args[2];
+              int ttl = -1;
+
+              if (args.size() == 4)
+              {
+                ttl = std::stoi(args[3]);
+              }
+              if (ttl > 0)
+                expiry[key] = time(NULL) + ttl;
+
+              store[key] = value;
+              aof << "SET " << key << " " << value;
+              if (ttl > 0)
+                aof << " " << ttl;
+              aof << std::endl;
+              aof.flush();
+
+              response = "+OK\r\n";
+            }
+          }
+          else if (command == "GET")
+          {
+            if (args.size() != 2)
+            {
+              response = "-ERR wrong number of arguments \r\n";
+            }
+            else
+            {
+              std::string key = args[1];
+              if (expiry.find(key) != expiry.end())
+              {
+                if (time(NULL) > expiry[key])
+                {
+                  store.erase(key);
+                  expiry.erase(key);
+                  response = "$-1\r\n";
+                  send(fd, response.c_str(), response.length(), 0);
+                  continue;
+                }
+              }
+              if (store.find(key) != store.end())
+              {
+                std::string value = store[key];
+                response = "$" + std::to_string(value.size()) + "\r\n" + value + "\r\n";
+              }
+              else
+              {
+                response = "$-1\r\n";
+              }
             }
           }
           else if (command == "DEL")
           {
-            std::string key;
-            iss >> key;
+            if (args.size() != 2)
+            {
+              response = "-ERR wrong number of arguments\r\n";
+            }
+            else
+            {
+              std::string key = args[1];
 
-            store.erase(key);
-            expiry.erase(key);
+              store.erase(key);
+              expiry.erase(key);
 
-            aof << "DEL " << key << std::endl;
-            aof.flush();
+              aof << "DEL " << key << std::endl;
+              aof.flush();
 
-            response = "DELETED\n";
+              response = ":1\r\n";
+            }
           }
           else
           {
-            response = "UNKNOWN COMMAND\n";
+            response = "-ERR unknown command\r\n";
           }
 
           send(fd, response.c_str(), response.length(), 0);
