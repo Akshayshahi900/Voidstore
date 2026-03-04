@@ -18,6 +18,11 @@ int main()
     perror("Socket creation failed");
     return 1;
   }
+  fd_set master;
+  fd_set read_fds;
+
+  FD_ZERO(&master);
+  FD_ZERO(&read_fds);
 
   // 2. Allow address reuse
   int opt = 1;
@@ -47,6 +52,9 @@ int main()
     return 1;
   }
 
+  FD_SET(serverSocket, &master);
+  int fdmax = serverSocket;
+
   std::cout << "Server listening on port 8080...\n";
 
   sockaddr_in clientAddress{};
@@ -55,88 +63,106 @@ int main()
   // 6. Main server loop
   while (true)
   {
-    int clientSocket = accept(serverSocket,
-                              (struct sockaddr *)&clientAddress,
-                              &clientSize);
+    read_fds = master;
 
-    if (clientSocket < 0)
+    if (select(fdmax + 1, &read_fds, NULL, NULL, NULL) == -1)
     {
-      perror("Accept failed");
-      continue;
+      perror("select");
+      exit(1);
     }
 
-    std::cout << "Client connected\n";
-
-    char buffer[1024];
-
-    // Per-client loop
-    while (true)
+    for (int i = 0; i <= fdmax; i++)
     {
-      memset(buffer, 0, sizeof(buffer));
-
-      int bytesReceived = recv(clientSocket,
-                               buffer,
-                               sizeof(buffer) - 1,
-                               0);
-
-      if (bytesReceived <= 0)
+      if (FD_ISSET(i, &read_fds))
       {
-        std::cout << "Client disconnected\n";
-        break;
-      }
-
-      buffer[bytesReceived] = '\0';
-
-      std::string input(buffer);
-      std::istringstream iss(input);
-
-      std::string command;
-      iss >> command;
-
-      std::string response;
-
-      if (command == "SET")
-      {
-        std::string key, value;
-        iss >> key >> value;
-        store[key] = value;
-        response = "OK\n";
-      }
-      else if (command == "GET")
-      {
-        std::string key;
-        iss >> key;
-
-        if (store.find(key) != store.end())
+        if (i == serverSocket)
         {
-          response = store[key] + "\n";
+          sockaddr_in clientAddress{};
+          socklen_t clientSize = sizeof(clientAddress);
+
+          int newfd = accept(serverSocket,
+                             (struct sockaddr *)&clientAddress,
+                             &clientSize);
+
+          if (newfd == -1)
+          {
+            perror("accept");
+          }
+          else
+          {
+            FD_SET(newfd, &master);
+
+            if (newfd > fdmax)
+              fdmax = newfd;
+
+            std::cout << "New Client Connected: " << newfd << std::endl;
+          }
         }
         else
         {
-          response = "NOT FOUND\n";
+          char buffer[1024];
+
+          int bytes = recv(i, buffer, sizeof(buffer) - 1, 0);
+
+          if (bytes <= 0)
+          {
+            std::cout << "Client disconnected: " << i << std::endl;
+
+            close(i);
+            FD_CLR(i, &master);
+          }
+          else
+          {
+            buffer[bytes] = '\0';
+
+            std::cout << "Received from " << i << ": " << buffer << std::endl;
+
+            std::string input(buffer);
+            std::istringstream iss(input);
+            std::string command;
+            iss >> command;
+
+            std::string response;
+            if (command == "SET")
+            {
+              std::string key, value;
+              iss >> key >> value;
+
+              store[key] = value;
+              response = "OK\n";
+            }
+            else if (command == "GET")
+            {
+              std::string key;
+              iss >> key;
+
+              if (store.find(key) != store.end())
+              {
+                response = store[key] + "\n";
+              }
+              else
+              {
+                response = "NOT FOUND\n";
+              }
+            }
+            else if (command == "DEL")
+            {
+              std::string key;
+              iss >> key;
+
+              store.erase(key);
+              response = "DELETED\n";
+            }
+            else
+            {
+              response = "UNKNOWN COMMAND\n";
+            }
+            send(i, response.c_str(), response.length(), 0);
+          }
         }
       }
-      else if (command == "DEL")
-      {
-        std::string key;
-        iss >> key;
-        store.erase(key);
-        response = "DELETED\n";
-      }
-      else
-      {
-        response = "UNKNOWN COMMAND\n";
-      }
-
-      send(clientSocket,
-           response.c_str(),
-           response.length(),
-           0);
     }
-
-    close(clientSocket);
   }
-
   close(serverSocket);
   return 0;
 }
