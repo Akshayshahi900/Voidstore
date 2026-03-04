@@ -6,11 +6,41 @@
 #include <unordered_map>
 #include <string>
 #include <sstream>
+#include <fstream>
 
 std::unordered_map<std::string, std::string> store;
+std::ofstream aof("db.aof", std::ios::app);
 
+void loadDatabase()
+{
+  std::ifstream file("db.aof");
+  std::string line;
+
+  while (std::getline(file, line))
+  {
+    std::istringstream iss(line);
+    std::string command;
+    iss >> command;
+
+    if (command == "SET")
+    {
+      std::string key, value;
+      iss >> key >> value;
+      store[key] = value;
+    }
+    else if (command == "DEL")
+    {
+      std::string key;
+      iss >> key;
+      store.erase(key);
+    }
+  }
+}
 int main()
 {
+  // load database
+
+  loadDatabase();
   // 1. Create socket
   int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
   if (serverSocket < 0)
@@ -129,6 +159,8 @@ int main()
               iss >> key >> value;
 
               store[key] = value;
+              aof << "SET " << key << " " << value << std::endl;
+              aof.flush();
               response = "OK\n";
             }
             else if (command == "GET")
@@ -151,6 +183,8 @@ int main()
               iss >> key;
 
               store.erase(key);
+              aof << "DEL " << key << std::endl;
+              aof.flush();
               response = "DELETED\n";
             }
             else
