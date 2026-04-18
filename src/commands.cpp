@@ -72,6 +72,13 @@ std::string handleCommand(const std::vector<std::string> &args)
 
     return ":1\r\n";
   }
-
+  else if (command == "PING")
+  {
+    return "+PONG\r\n";
+  }
+  else if (command == "CONFIG")
+  {
+    return "+OK\r\n";
+  }
   return "-ERR unknown command\r\n";
 }

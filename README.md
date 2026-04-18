@@ -1,174 +1,105 @@
-# VoidStore
+# 🚀 VoidStore — Redis-like In-Memory Database in C++
 
-VoidStore is a Redis-compatible in-memory key-value database server built from scratch in C++.
-
-The project implements core database infrastructure including an event-driven networking layer using `epoll`, Redis RESP protocol parsing, command dispatching, TTL expiration, and append-only persistence.
-
-This project was built as a systems programming exercise to understand how high-performance backend infrastructure like Redis works internally.
+VoidStore is a high-performance, event-driven in-memory key-value database built from scratch in C++ using Linux `epoll`.
+It implements core systems found in real-world data stores, including non-blocking I/O, RESP protocol parsing, TTL expiration, and append-only persistence.
 
 ---
 
-## Features
+## 🎯 Why I built this
 
-- Redis RESP protocol support
-- Multi-client TCP server
-- Event-driven architecture using `epoll`
-- In-memory key-value storage
-- TTL key expiration
-- Append-Only File (AOF) persistence
-- Redis compatible commands via `redis-cli`
+To understand how systems like Redis handle networking, concurrency, and data persistence internally—beyond just using them as black boxes.
 
-Supported commands:
 
+
+---
+
+## 🧩 Architecture
+![VoidStore Architecture](assets/voidstore-architecture.png)
+---
+
+## ⚙️ How to Run
+
+```bash
+g++ src/*.cpp -Iinclude -o server
+./server
+redis-cli -p 8080
 ```
 
+---
+
+## ⚡ Benchmark
+
+Handles ~60K requests/sec on local machine (single-threaded, epoll-based event loop).
+
+Measured over multiple runs using redis-cli with piped input (100K SET operations) under minimal system load. Results include client-side overhead.
+
+Observed range: ~60K–63K ops/sec.
+
+Single-threaded design; performance can be further improved using pipelining and multi-threaded request handling.
+
+---
+
+## 🎥 Demo
+![VoidStore Demo](assets/image.png)
+
+---
+
+## 🔧 Features
+
+* Event-driven server using `epoll` (non-blocking I/O)
+* Redis-compatible RESP protocol parsing
+* Multi-client TCP handling using sockets
+* In-memory key-value storage with TTL expiration
+* Append-Only File (AOF) persistence for durability
+* Command support via `redis-cli`
+
+### Supported Commands
+
+```
 SET key value
 SET key value ttl
 GET key
 DEL key
-
 ```
 
 ---
 
-## Architecture
+## 🧠 Engineering Highlights
 
-The project is organized in modular layers similar to real database systems.
-
-```
-
-Client (redis-cli)
-│
-▼
-TCP Socket Server
-│
-▼
-epoll Event Loop
-│
-▼
-RESP Protocol Parser
-│
-▼
-Command Dispatcher
-│
-▼
-In-Memory Key Value Store
-│
-▼
-TTL Expiration + AOF Persistence
-
-```
+* Designed an **event-driven architecture using epoll** for efficient multi-client handling
+* Implemented **lazy TTL expiration** during read operations
+* Built a **custom RESP parser** to handle Redis protocol communication
+* Implemented **AOF logging and replay** to recover state on restart
+* Used **unordered_map for O(1) average-time operations**
+* This project focuses on understanding system internals rather than replicating full Redis functionality.
 
 ---
 
-## Project Structure
+## 🧩 Real-World Use Cases
 
-```
+Systems like VoidStore (and Redis) are commonly used for:
 
-voidstore/
-│
-├── src/
-│   main.cpp
-│   server.cpp
-│   resp_parser.cpp
-│   commands.cpp
-│   storage.cpp
-│   persistence.cpp
-│
-├── include/
-│   server.h
-│   resp_parser.h
-│   commands.h
-│   storage.h
-│   persistence.h
-│
-├── db.aof
-└── README.md
-
-````
+* Caching frequently accessed data
+* Managing user sessions and authentication
+* Real-time features like chat presence
+* Background job queues and rate limiting
 
 ---
 
-## Build
-
-Compile the project:
-
-```bash
-g++ src/*.cpp -Iinclude -o server
-````
-
-Run the server:
-
-```bash
-./server
-```
-
----
-
-## Testing with redis-cli
-
-Install redis-cli if needed.
-
-```
-redis-cli -p 8080
-```
-
-Example commands:
-
-```
-SET name akshay
-GET name
-DEL name
-```
-
----
-
-## Persistence
-
-VoidStore uses an **Append-Only File (AOF)** to store commands.
-
-Every write operation is logged:
-
-```
-SET name akshay
-DEL name
-```
-
-When the server starts, the database state is rebuilt by replaying the AOF log.
-
----
-
-## TTL Expiration
-
-Keys can expire automatically:
-
-```
-SET session abc123 10
-```
-
-This sets a key that expires in **10 seconds**.
-
----
-
-## Technologies Used
+## 🛠 Tech Stack
 
 * C++
 * POSIX sockets
-* epoll (Linux event-driven I/O)
+* epoll (Linux I/O multiplexing)
 * Redis RESP protocol
-* STL containers
+* STL (unordered_map)
 
 ---
 
-## Future Improvements
+## 🚧 Future Improvements
 
-Planned features:
-
-* Redis LIST data structure
-* Redis SET data structure
-* LRANGE and LPUSH commands
-* Background expiration cleaner
+* LIST / SET data structures
+* Background TTL cleaner (active expiration)
 * RDB snapshot persistence
-* Non-blocking sockets
-* Better RESP streaming parser
 * Replication support
+* Non-blocking socket improvements
