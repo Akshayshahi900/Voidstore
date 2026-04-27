@@ -1,6 +1,6 @@
 #include "resp_parser.h"
 #include <sstream>
-
+#include <iostream>
 std::vector<std::string> parseRESP(const std::string &input)
 {
   std::vector<std::string> args;
@@ -32,13 +32,19 @@ std::vector<std::string> parseRESP(const std::string &input)
 }
 bool parseOneCommand(std::string &buffer, std::vector<std::string> &args)
 {
+  std::cout << "RAW BUFFER:\n"
+            << buffer << std::endl;
   if (buffer.empty())
     return false;
 
   size_t pos = 0;
-
-  if (buffer[pos] != '*')
+  while (pos < buffer.size() && (buffer[pos] == '\r' || buffer[pos] == '\n' || buffer[pos] == ' '))
   {
+    pos++;
+  }
+  if (pos >= buffer.size() || buffer[pos] != '*')
+  {
+    std::cout << "Invalid start char:" << buffer[pos] << std::endl;
     return false;
   }
 
@@ -62,7 +68,7 @@ bool parseOneCommand(std::string &buffer, std::vector<std::string> &args)
     int len = std::stoi(buffer.substr(pos + 1, len_end - pos - 1));
 
     pos = len_end + 2;
-
+    std::cout << "Buffer size: " << buffer.size() << " pos: " << pos << " len: " << len << std::endl;
     // check if "<data\r\n"
     if (pos + len + 2 > buffer.size())
       return false;

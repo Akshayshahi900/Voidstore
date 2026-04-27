@@ -48,6 +48,7 @@ Single-threaded design; performance can be further improved using pipelining and
 
 * Event-driven server using `epoll` (non-blocking I/O)
 * Redis-compatible RESP protocol parsing
+* Multiple commands parsing using pipelining
 * Multi-client TCP handling using sockets
 * In-memory key-value storage with TTL expiration
 * Append-Only File (AOF) persistence for durability
@@ -55,6 +56,7 @@ Single-threaded design; performance can be further improved using pipelining and
 
 ### Supported Commands
 
+Single Command
 ```
 SET key value
 SET key value ttl
@@ -62,6 +64,11 @@ GET key
 DEL key
 ```
 
+Multiple Commands
+
+```
+ printf '*3\r\n$3\r\nSET\r\n$4\r\nkey1\r\n$6\r\nvalue1\r\n*2\r\n$3\r\nGET\r\n$4\r\nkey1\r\n' | nc localhost 8080
+```
 ---
 
 ## 🧠 Engineering Highlights

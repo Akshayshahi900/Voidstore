@@ -83,7 +83,7 @@ void startServer()
           // std::cout << "Received: " << buffer << std::endl;
 
           std::string response;
-
+          // std::cout << "___________ Parsing loop ______________" << std::endl;
           while (true)
           {
             std::vector<std::string> args;
@@ -92,11 +92,20 @@ void startServer()
             {
               break;
             }
+            std::cout << "command parsed: ";
+            for (auto &a : args)
+              std::cout << a << " ";
+            std::cout << std::endl;
+
             response += handleCommand(args);
           }
           if (!response.empty())
           {
-            send(fd, response.c_str(), response.length(), 0);
+            std::cout << "Sending response:\n"
+                      << response << std::endl;
+            ssize_t sent = send(fd, response.c_str(), response.length(), 0);
+
+            std::cout << "Bytes sent: " << sent << std::endl;
           }
         }
       }
