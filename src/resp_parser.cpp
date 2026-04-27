@@ -1,50 +1,34 @@
 #include "resp_parser.h"
 #include <sstream>
 #include <iostream>
-std::vector<std::string> parseRESP(const std::string &input)
-{
-  std::vector<std::string> args;
-  std::istringstream stream(input);
-  std::string line;
 
-  std::getline(stream, line);
-
-  if (!line.empty() && line.back() == '\r')
-    line.pop_back();
-
-  if (line.empty() || line[0] != '*')
-    return args;
-
-  int argCount = std::stoi(line.substr(1));
-
-  for (int i = 0; i < argCount; i++)
-  {
-    std::getline(stream, line);
-    std::getline(stream, line);
-
-    if (!line.empty() && line.back() == '\r')
-      line.pop_back();
-
-    args.push_back(line);
-  }
-
-  return args;
-}
 bool parseOneCommand(std::string &buffer, std::vector<std::string> &args)
 {
-  std::cout << "RAW BUFFER:\n"
-            << buffer << std::endl;
+
+  args.clear();
+  std::cout << "Buffer size: " << buffer.size() << std::endl;
   if (buffer.empty())
     return false;
 
   size_t pos = 0;
+  // skip whitespace
   while (pos < buffer.size() && (buffer[pos] == '\r' || buffer[pos] == '\n' || buffer[pos] == ' '))
   {
     pos++;
   }
+  // resync to next '*'
   if (pos >= buffer.size() || buffer[pos] != '*')
   {
-    std::cout << "Invalid start char:" << buffer[pos] << std::endl;
+    // size_t next = buffer.find('*');
+    // if (next == std::string::npos)
+    // {
+    //   buffer.clear();
+    //   return false;
+    // }
+    // if (next > 0)
+    // {
+    //   buffer.erase(0, next);
+    // }
     return false;
   }
 

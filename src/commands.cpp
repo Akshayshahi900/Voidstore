@@ -80,5 +80,12 @@ std::string handleCommand(const std::vector<std::string> &args)
   {
     return "+OK\r\n";
   }
+  else if (command == "ECHO")
+  {
+    if (args.size() != 2)
+      return "-ERR wrong number of arguments \r\n";
+    std::string value = args[1];
+    return "$" + std::to_string(value.size()) + "\r\n" + value + "\r\n";
+  }
   return "-ERR unknown command\r\n";
 }

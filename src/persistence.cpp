@@ -22,14 +22,20 @@ void loadDatabase()
     if (command == "SET")
     {
       std::string key, value;
-      int ttl;
+      time_t abs_expiry;
 
       iss >> key >> value;
 
       store[key] = value;
 
-      if (iss >> ttl)
-        expiry[key] = time(NULL) + ttl;
+      // The AOF stores the absolute expiry timestamp (not a relative TTL)
+      if (iss >> abs_expiry)
+      {
+        if (abs_expiry > time(NULL))
+          expiry[key] = abs_expiry; // still valid
+        else
+          store.erase(key); // already expired, skip it
+      }
     }
     else if (command == "DEL")
     {
@@ -43,8 +49,9 @@ void loadDatabase()
 void logSet(const std::string &key, const std::string &value, int ttl)
 {
   aof << "SET " << key << " " << value;
+  // Write the absolute expiry timestamp so reloads don't reset the clock
   if (ttl > 0)
-    aof << " " << ttl;
+    aof << " " << (time(NULL) + ttl);
   aof << std::endl;
   aof.flush();
 }
