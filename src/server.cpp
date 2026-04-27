@@ -9,7 +9,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <unordered_map>
 
+std::unordered_map<int, std::string> clientBuffers;
 void startServer()
 {
   loadDatabase();
@@ -41,8 +43,9 @@ void startServer()
 
   while (true)
   {
-    int n = epoll_wait(epoll_fd, events, 64, -1);
+    int n = epoll_wait(epoll_fd, events, 64, -1); // count of number of  socket changes
 
+    // looping over the events
     for (int i = 0; i < n; i++)
     {
       int fd = events[i].data.fd;
@@ -61,9 +64,9 @@ void startServer()
       }
       else
       {
-        char buffer[1024];
+        char temp[1024];
 
-        int bytes = recv(fd, buffer, sizeof(buffer) - 1, 0);
+        int bytes = recv(fd, temp, sizeof(temp) - 1, 0);
 
         if (bytes <= 0)
         {
@@ -71,19 +74,30 @@ void startServer()
           epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
 
           std::cout << "Client disconnected: " << fd << std::endl;
+          clientBuffers.erase(fd);
         }
         else
         {
-          buffer[bytes] = '\0';
+          clientBuffers[fd].append(temp, bytes);
 
-          std::cout << "Received: " << buffer << std::endl;
+          // std::cout << "Received: " << buffer << std::endl;
 
-          // 🔹 THIS IS WHERE YOUR CODE GOES
-          auto args = parseRESP(buffer);
+          std::string response;
 
-          std::string response = handleCommand(args);
-
-          send(fd, response.c_str(), response.length(), 0);
+          while (true)
+          {
+            std::vector<std::string> args;
+            bool ok = parseOneCommand(clientBuffers[fd], args);
+            if (!ok)
+            {
+              break;
+            }
+            response += handleCommand(args);
+          }
+          if (!response.empty())
+          {
+            send(fd, response.c_str(), response.length(), 0);
+          }
         }
       }
     }

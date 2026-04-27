@@ -30,3 +30,49 @@ std::vector<std::string> parseRESP(const std::string &input)
 
   return args;
 }
+bool parseOneCommand(std::string &buffer, std::vector<std::string> &args)
+{
+  if (buffer.empty())
+    return false;
+
+  size_t pos = 0;
+
+  if (buffer[pos] != '*')
+  {
+    return false;
+  }
+
+  size_t line_end = buffer.find("\r\n", pos);
+  if (line_end == std::string::npos)
+    return false;
+
+  int count = std::stoi(buffer.substr(pos + 1, line_end - pos - 1));
+  pos = line_end + 2;
+
+  for (int i = 0; i < count; i++)
+  {
+    // except "$<len>\r\n"
+    if (pos >= buffer.size() || buffer[pos] != '$')
+      return false;
+
+    size_t len_end = buffer.find("\r\n", pos);
+    if (len_end == std::string::npos)
+      return false;
+
+    int len = std::stoi(buffer.substr(pos + 1, len_end - pos - 1));
+
+    pos = len_end + 2;
+
+    // check if "<data\r\n"
+    if (pos + len + 2 > buffer.size())
+      return false;
+
+    args.push_back(buffer.substr(pos, len));
+
+    pos += len + 2; // skip data + \r\n
+  }
+
+  // remove the parsed command from buffer
+  buffer.erase(0, pos);
+  return true;
+}
